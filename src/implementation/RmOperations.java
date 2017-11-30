@@ -119,14 +119,14 @@ public class RmOperations {
         return replicaManagers;
     }
 
-    // operation code for listening to request for importing data from replica
-    static final int R_REQ_IMPORT = 0;
+    // operation code for listening to request from replica for importing data
+    static final int R_REQ_IMPORT = 7;
 
-    // operation code for sending the request to export their data to replica
-    static final int R_REQ_EXPORT = 1;
+    // operation code for sending the request to replica to export their data
+    static final int R_REQ_EXPORT = 8;
 
-    // operation code for sending and listening the request to import data from their replica to other RMs
-    static final int RM_REQ_IMPORT = 2;
+    // operation code for sending and listening the request to other RMs to import data from their replica
+    static final int RM_REQ_IMPORT = 0;
 
     // key string for sending campus code in request body
     static final String BODY_CODE = "c";

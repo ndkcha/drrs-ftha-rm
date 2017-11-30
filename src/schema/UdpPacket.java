@@ -5,7 +5,7 @@ import java.util.HashMap;
 
 public class UdpPacket implements Serializable {
     private static final long serialVersionUID = 1L;
-    public int operation;
+    public int operation, fePort, sequence;
     public HashMap<String, Object> body;
 
     public UdpPacket(int operation, HashMap<String, Object> body) {
