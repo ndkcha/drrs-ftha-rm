@@ -27,7 +27,7 @@ public class Replica {
     }
 
     public void decrementFailureCount() {
-        this.failures -= (this.failures > 0) ? 1 : 0;
+        this.failures = 0;
     }
 
     public boolean isFailureCountCritical() {
