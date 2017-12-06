@@ -2,9 +2,13 @@ package implementation;
 
 import schema.Replica;
 import schema.ReplicaManager;
+import schema.UdpPacket;
 
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.SocketException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -57,6 +61,41 @@ public class RmOperations {
         for (Map.Entry<String, Replica> replicaEntry : this.replicaList.entrySet()) {
             String code = replicaEntry.getKey();
             this.startReplica(code);
+
+
+        }
+    }
+
+    // send data to replica
+    public void sendDataToReplica(String code, int replicaPort) {
+        try {
+            // for incoming packets
+            byte[] inBuffer = new byte[10000];
+            DatagramPacket incoming = new DatagramPacket(inBuffer, inBuffer.length);
+
+            // new socket to keep track of everything
+            DatagramSocket socket = new DatagramSocket();
+
+            // make the packet
+            HashMap<String, Object> body = new HashMap<>();
+            body.put(BODY_CODE, code);
+            UdpPacket udpPacket = new UdpPacket(RM_REQ_IMPORT, body);
+            byte[] outgoing = this.serialize(udpPacket);
+
+            // send the other RM for the data
+            DatagramPacket outPacket = new DatagramPacket(outgoing, outgoing.length, InetAddress.getByName(""), 8034);
+            socket.send(outPacket);
+
+            // get the data from the RM
+            socket.receive(incoming);
+
+            byte[] toReplica = incoming.getData();
+            DatagramPacket toReplicaPacket = new DatagramPacket(toReplica, toReplica.length, InetAddress.getByName("localhost"), replicaPort);
+            socket.send(toReplicaPacket);
+        } catch (SocketException exception) {
+            this.logs.warning("Error connecting to other RMs\nMessage: " + exception.getMessage());
+        } catch (IOException exception) {
+            this.logs.warning("Error encoding the packet.\nMessage: " + exception.getMessage());
         }
     }
 
@@ -136,4 +175,24 @@ public class RmOperations {
 
     // operation code for success of operation by replica from FE
     static final int FE_SUCCESS = 4;
+
+    // key string for sending room records in request body
+    static final String BODY_ROOM_RECORD = "rr";
+
+    private byte[] serialize(Object obj) throws IOException {
+        try(ByteArrayOutputStream b = new ByteArrayOutputStream()){
+            try(ObjectOutputStream o = new ObjectOutputStream(b)){
+                o.writeObject(obj);
+            }
+            return b.toByteArray();
+        }
+    }
+
+    private Object deserialize(byte[] bytes) throws IOException, ClassNotFoundException {
+        try(ByteArrayInputStream b = new ByteArrayInputStream(bytes)){
+            try(ObjectInputStream o = new ObjectInputStream(b)){
+                return o.readObject();
+            }
+        }
+    }
 }
