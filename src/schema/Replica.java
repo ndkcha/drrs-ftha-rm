@@ -1,7 +1,7 @@
 package schema;
 
 public class Replica {
-    private int udpPort, failures;
+	private int udpPort, failures;
     public String name, path;
     private Process process;
 

@@ -3,7 +3,8 @@ package schema;
 import java.io.Serializable;
 
 public class TimeSlot implements Serializable {
-    public String time = "";
+	private static final long serialVersionUID = 1L;
+	public String time = "";
     private String bookedBy = "";
     private String bookingId = "";
 

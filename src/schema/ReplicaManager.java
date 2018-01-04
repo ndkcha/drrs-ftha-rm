@@ -4,7 +4,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 
 public class ReplicaManager {
-    private String ipAddress;
+	private String ipAddress;
     private int udpPort;
 
     public ReplicaManager(String ipAddress, int udpPort) {

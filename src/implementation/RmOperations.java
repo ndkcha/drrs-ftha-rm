@@ -1,29 +1,25 @@
 package implementation;
 
-import schema.Replica;
-import schema.ReplicaManager;
-import schema.UdpPacket;
-
-import java.io.*;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
-import java.net.SocketException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
 
+import schema.Replica;
+import schema.ReplicaManager;
+
 public class RmOperations {
-    // keep logging everything
+	// keep logging everything
     private Logger logs;
-    // path to java binary
-    private final String javaBin = System.getProperty("java.home") + File.separator + "bin" + File.separator + "java";
     // keeps track of replicas against their campus codes as key
     private HashMap<String, Replica> replicaList = new HashMap<>();
     // keeps track of all the replica managers in network
     private List<ReplicaManager> replicaManagers = new ArrayList<>();
+    // keep track of the system failure
+    private int failure = 0;
+    // keep track of the last failure state (the sequence number)
+    private int lastFailedSequence = 1;
 
     public RmOperations(String replicaManagers, String replicas, Logger logs) {
         this.logs = logs;
@@ -42,7 +38,7 @@ public class RmOperations {
         String[] replicaManagerList = replicaManagers.split(";");
         for (String item : replicaManagerList) {
             // parse all the parameters
-            String[] params = item.split(";");
+            String[] params = item.split(",");
             ReplicaManager manager = new ReplicaManager(params[0], Integer.parseInt(params[1]));
             // add to the list
             this.replicaManagers.add(manager);
@@ -60,42 +56,7 @@ public class RmOperations {
         this.logs.info("Starting all the replica servers");
         for (Map.Entry<String, Replica> replicaEntry : this.replicaList.entrySet()) {
             String code = replicaEntry.getKey();
-            this.startReplica(code);
-
-
-        }
-    }
-
-    // send data to replica
-    public void sendDataToReplica(String code, int replicaPort) {
-        try {
-            // for incoming packets
-            byte[] inBuffer = new byte[10000];
-            DatagramPacket incoming = new DatagramPacket(inBuffer, inBuffer.length);
-
-            // new socket to keep track of everything
-            DatagramSocket socket = new DatagramSocket();
-
-            // make the packet
-            HashMap<String, Object> body = new HashMap<>();
-            body.put(BODY_CODE, code);
-            UdpPacket udpPacket = new UdpPacket(RM_REQ_IMPORT, body);
-            byte[] outgoing = this.serialize(udpPacket);
-
-            // send the other RM for the data
-            DatagramPacket outPacket = new DatagramPacket(outgoing, outgoing.length, InetAddress.getByName(""), 8034);
-            socket.send(outPacket);
-
-            // get the data from the RM
-            socket.receive(incoming);
-
-            byte[] toReplica = incoming.getData();
-            DatagramPacket toReplicaPacket = new DatagramPacket(toReplica, toReplica.length, InetAddress.getByName("localhost"), replicaPort);
-            socket.send(toReplicaPacket);
-        } catch (SocketException exception) {
-            this.logs.warning("Error connecting to other RMs\nMessage: " + exception.getMessage());
-        } catch (IOException exception) {
-            this.logs.warning("Error encoding the packet.\nMessage: " + exception.getMessage());
+            this.startReplica(code);      
         }
     }
 
@@ -105,11 +66,35 @@ public class RmOperations {
         if (replica != null)
             replica.incrementFailureCount();
     }
+    
+    /**
+     * increment the system failure count
+     * @param sequence defines the sequence number of the point of failure 
+     */
+    void incrementFailureCount(int sequence) {
+    	this.failure = (sequence == (this.lastFailedSequence + 1)) ? this.failure + 1 : 0;
+    	this.lastFailedSequence = sequence;
+    }
+    
+    // increment the system failure count
+    void incrementFailureCount() {
+    	this.failure += 1;
+    }
 
     // check if the replica fails for three consecutive time
     boolean isReplicaFailureCritical(String code) {
         Replica replica = this.replicaList.getOrDefault(code, null);
         return (replica != null) && replica.isFailureCountCritical();
+    }
+    
+    // check if the system fails for three consecutive time
+    boolean isSystemCritical() {
+    	return (this.failure >= 3);
+    }
+    
+    // reset the failure count
+    void resetFailureCount() {
+    	this.failure = 0;
     }
 
     // decrement the replica failure count (but it should not go below zero)
@@ -121,28 +106,28 @@ public class RmOperations {
 
     // start a replica
     void startReplica(String code) {
-        // list of commands to execute
-        final List<String> command = new ArrayList<>();
         // find the replica
         Replica replica = this.replicaList.getOrDefault(code, null);
 
         // no replica. no process to execute
         if (replica == null) return;
 
-        // commands used to execute the server
-        command.add(javaBin);
-        command.add("-jar");
-        command.add(replica.path);
+        // list of commands to execute
+        String command = "java -cp \"G:\\workspace\\drrs-ftha-replica\\bin\" " + replica.path;
+        
+        System.out.println(command);
 
-        // initialize the process builder
-        try {
-            final ProcessBuilder builder = new ProcessBuilder(command);
-            Process process = builder.start();
-            replica.setProcess(process);
-            this.logs.info(replica.name + " is up and running. port: " + replica.getUdpPort() + ". code: " + code);
-        } catch (IOException ioException) {
-            this.logs.warning("The manager could not start the " + replica.name + " server.\nMessage: " + ioException.getMessage());
-        }
+        ReplicaThread rThread = new ReplicaThread(command, replica, code, this.replicaList, this.logs);
+        rThread.start();
+    }
+    
+    void killReplicas() {
+    	for (Map.Entry<String, Replica> replicaEntry : this.replicaList.entrySet()) {
+    		Replica replica = replicaEntry.getValue();
+    		
+    		if (replica.getProcess().isAlive())
+    			replica.reset();
+    	}
     }
 
     // kill a replica server
@@ -178,21 +163,4 @@ public class RmOperations {
 
     // key string for sending room records in request body
     static final String BODY_ROOM_RECORD = "rr";
-
-    private byte[] serialize(Object obj) throws IOException {
-        try(ByteArrayOutputStream b = new ByteArrayOutputStream()){
-            try(ObjectOutputStream o = new ObjectOutputStream(b)){
-                o.writeObject(obj);
-            }
-            return b.toByteArray();
-        }
-    }
-
-    private Object deserialize(byte[] bytes) throws IOException, ClassNotFoundException {
-        try(ByteArrayInputStream b = new ByteArrayInputStream(bytes)){
-            try(ObjectInputStream o = new ObjectInputStream(b)){
-                return o.readObject();
-            }
-        }
-    }
 }

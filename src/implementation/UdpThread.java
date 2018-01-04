@@ -10,7 +10,7 @@ import java.util.*;
 import java.util.logging.Logger;
 
 public class UdpThread implements Runnable {
-    private Thread thread;
+	private Thread thread;
     private Logger logs;
     private DatagramSocket socket;
     private DatagramPacket packet;
@@ -58,20 +58,29 @@ public class UdpThread implements Runnable {
 
     // when the replica gives different response to front end. i.e. replica execution is unique at front end.
     private void replicaFails(HashMap<String, Object> body) {
-        String code = (String) body.get(RmOperations.BODY_CODE);
-
-        this.rmOps.incrementFailureCount(code);
-
-        if (this.rmOps.isReplicaFailureCritical(code)) {
-            this.rmOps.killReplica(code);
-            this.rmOps.startReplica(code);
-        }
+//        String code = (String) body.get(RmOperations.BODY_CODE);
+//
+//        this.rmOps.incrementFailureCount(code);
+//
+//        if (this.rmOps.isReplicaFailureCritical(code)) {
+//            this.rmOps.killReplica(code);
+//            this.rmOps.startReplicas();;
+//        }
+    	
+    	this.rmOps.incrementFailureCount();
+    	
+    	if (this.rmOps.isSystemCritical()) {
+    		this.rmOps.killReplicas();
+    		this.rmOps.resetFailureCount();
+    		this.rmOps.startReplicas();
+    	}
     }
 
     // when the replica gives the same response to the front end as other hosts' replica. i.e. replica execution is not unique at front end.
     private void replicaSucceeds(HashMap<String, Object> body) {
-        String code = (String) body.get(RmOperations.BODY_CODE);
-        this.rmOps.decrementFailureCount(code);
+//        String code = (String) body.get(RmOperations.BODY_CODE);
+//        this.rmOps.decrementFailureCount(code);
+    	this.rmOps.resetFailureCount();
     }
 
     // when replica sends request to fetch data from other nodes in the network
@@ -124,6 +133,8 @@ public class UdpThread implements Runnable {
 
             // send the first one in the map
             mapToSend = data.iterator().next();
+            
+            socket.close();
         } catch (SocketException exception) {
             this.logs.warning("Error connecting to other RMs\nMessage: " + exception.getMessage());
         } catch (IOException exception) {
@@ -134,9 +145,8 @@ public class UdpThread implements Runnable {
 
     // when another replica manager needs data
     // in that case, send the data request to relevant replica and wait for its response
-    @SuppressWarnings(value = "unchecked")
     private byte[] rmRequestsData(HashMap<String, Object> body) throws IOException {
-        HashMap<String, HashMap<Integer, List<TimeSlot>>> mapToSend = new HashMap<>();
+        byte[] out = new byte[100000];
         String code = (String) body.get(RmOperations.BODY_CODE);
         // get the relevant replica port number
         int port = this.rmOps.getReplicaPort(code);
@@ -159,16 +169,16 @@ public class UdpThread implements Runnable {
             // wait for the response
             socket.receive(inData);
 
-            mapToSend = (HashMap<String, HashMap<Integer, List<TimeSlot>>>) this.deserialize(inData.getData());
+            out = inData.getData();
+            
+            socket.close();
         } catch (SocketException exception) {
             this.logs.warning("Error connecting to the replica.\nMessage: " + exception.getMessage());
         } catch (IOException exception) {
             this.logs.warning("Error encoding/parsing the packet.\nMessage: " + exception.getMessage());
-        } catch (ClassNotFoundException exception) {
-            this.logs.warning("Error parsing the packet.\nMessage: " + exception.getMessage());
         }
 
-        return this.serialize(mapToSend);
+        return out;
     }
 
     public void start() {
